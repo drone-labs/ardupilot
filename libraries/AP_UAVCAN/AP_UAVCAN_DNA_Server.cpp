@@ -539,7 +539,8 @@ void AP_UAVCAN_DNA_Server::handleNodeInfo(uint8_t node_id, uint8_t unique_id[], 
 void trampoline_handleNodeInfo(const uavcan::ServiceCallResult<uavcan::protocol::GetNodeInfo>& resp)
 {
     uint8_t node_id, unique_id[16] = {0};
-    char name[15] = {0};
+    //char name[15] = {0};
+    char name[81] = {0};
 
     node_id = resp.getResponse().getSrcNodeID().get();
 

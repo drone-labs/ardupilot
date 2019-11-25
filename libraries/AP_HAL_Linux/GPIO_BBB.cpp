@@ -30,6 +30,7 @@ void GPIO_BBB::init()
     // Without this, access to deactivated banks (i.e. those with no clock source set up) will (logically) fail with SIGBUS
     // Idea taken from https://groups.google.com/forum/#!msg/beagleboard/OYFp4EXawiI/Mq6s3sg14HoJ
 
+    /* No more needed with a well formed device tree
     uint8_t bank_enable[3] = { 5, 65, 105 };
     int export_fd = open("/sys/class/gpio/export", O_WRONLY | O_CLOEXEC);
     if (export_fd == -1) {
@@ -39,7 +40,7 @@ void GPIO_BBB::init()
         dprintf(export_fd, "%u\n", (unsigned)bank_enable[i]);
     }
     close(export_fd);
-
+    */
 
     /* open /dev/mem */
     if ((mem_fd = open("/dev/mem", O_RDWR|O_SYNC|O_CLOEXEC)) < 0) {
