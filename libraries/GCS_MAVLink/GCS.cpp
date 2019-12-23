@@ -49,25 +49,43 @@ void GCS::send_text(MAV_SEVERITY severity, const char *fmt, ...)
     va_end(arg_list);
 }
 
+/******************************************************************************
+ *
+ * void GCS::send_to_active_channels(uint32_t msgid, const char *pkt)
+ * Send a Message on all active channels, i.e connected to a GCS
+ * (Receiving a heartbeat?)
+ *
+ ******************************************************************************/
 void GCS::send_to_active_channels(uint32_t msgid, const char *pkt)
 {
-    const mavlink_msg_entry_t *entry = mavlink_get_msg_entry(msgid);
-    if (entry == nullptr) {
-        return;
+  uint8_t i, num_GCS = num_gcs();
+
+  const mavlink_msg_entry_t *entry = mavlink_get_msg_entry(msgid);
+  if (entry == nullptr) {
+    printf("  GCS::send_to_active_channels() : Unknown Message ID!\n");      
+    return;
+  }
+
+  for (i=0; i<num_GCS; i++) {
+    GCS_MAVLINK &c = *chan(i);
+    if (!c.is_active()) {
+      //printf("  GCS::send_to_active_channels() : Channel #%u is not active!\n", i);
+      continue;
     }
-    for (uint8_t i=0; i<num_gcs(); i++) {
-        GCS_MAVLINK &c = *chan(i);
-        if (!c.is_active()) {
-            continue;
-        }
-        if (entry->max_msg_len + c.packet_overhead() > c.txspace()) {
-            // no room on this channel
-            continue;
-        }
-        c.send_message(pkt, entry);
+    if (entry->max_msg_len + c.packet_overhead() > c.get_uart()->txspace()) {
+      // no room on this channel
+      printf("  GCS::send_to_active_channels() : No room on this channel!\n");
+      continue;
     }
+
+    c.send_message(pkt, entry);
+  } // END for()
 }
 
+/******************************************************************************
+ *
+ *
+ ******************************************************************************/
 void GCS::send_named_float(const char *name, float value) const
 {
 

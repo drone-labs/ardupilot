@@ -137,9 +137,12 @@ void AP_Button::timer_update(void)
     }
 }
 
+/******************************************************************************
+ *
+ * Send a BUTTON_CHANGE report to the GCS
+ *
+ ******************************************************************************/
 /*
-  send a BUTTON_CHANGE report to the GCS
- */
 void AP_Button::send_report(void)
 {
     const mavlink_button_change_t packet{
@@ -150,11 +153,41 @@ void AP_Button::send_report(void)
     gcs().send_to_active_channels(MAVLINK_MSG_ID_BUTTON_CHANGE,
                                   (const char *)&packet);
 }
+*/
 
-/*
-  setup the pins as input with pullup. We need pullup to give reliable
-  input with a pulldown button
- */
+/******************************************************************************
+ *
+ * Send a BUTTON_CHANGE report to the GCS
+ *
+ ******************************************************************************/
+void AP_Button::send_report(void) {
+
+  uint8_t chan_mask = GCS_MAVLINK::active_channel_mask();
+  uint32_t now = AP_HAL::millis();
+
+  for (uint8_t i=0; i<MAVLINK_COMM_NUM_BUFFERS; i++) {
+    if ((chan_mask & (1U<<i)) == 0) {
+      //printf("  AP_Button::send_report() : Channel #%u is not active!\n", i);  
+      continue;
+    }
+    mavlink_channel_t chan = (mavlink_channel_t) i;
+
+    if (HAVE_PAYLOAD_SPACE(chan, BUTTON_CHANGE)) {
+      printf("  AP_Button::send_report() : Sending Message on Channel #%u\n", i);
+      mavlink_msg_button_change_send(chan, now, (uint32_t) last_change_time_ms, last_mask);
+    }
+    else {
+      printf("  AP_Button::send_report() : No room left on Channel #%u\n", i);  
+    } // END if(HAVE_PAYLOAD_SPACE)
+  }   // END for(i)
+}     // END AP_Button::send_report()
+
+/******************************************************************************
+ *
+ * Setup the pins as input with pullup. We need pullup to give reliable
+ * input with a pulldown button
+ *
+ ******************************************************************************/
 void AP_Button::setup_pins(void)
 {
     for (uint8_t i=0; i<AP_BUTTON_NUM_PINS; i++) {

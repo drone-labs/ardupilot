@@ -86,84 +86,105 @@ GCS_MAVLINK::GCS_MAVLINK(GCS_MAVLINK_Parameters &parameters,
     streamRates = parameters.streamRates;
 }
 
+/******************************************************************************
+ *
+ * bool GCS_MAVLINK::init(uint8_t instance)
+ * Initialize a MAVLink Instance
+ *
+ ******************************************************************************/
 bool GCS_MAVLINK::init(uint8_t instance)
 {
-    // search for serial port
-    const AP_SerialManager& serial_manager = AP::serialmanager();
+  // search for serial port
+  const AP_SerialManager& serial_manager = AP::serialmanager();
 
-    const AP_SerialManager::SerialProtocol protocol = AP_SerialManager::SerialProtocol_MAVLink;
+  const AP_SerialManager::SerialProtocol protocol = AP_SerialManager::SerialProtocol_MAVLink;
 
-    // get associated mavlink channel
-    if (!serial_manager.get_mavlink_channel(protocol, instance, chan)) {
-        // return immediately in unlikely case mavlink channel cannot be found
-        return false;
-    }
-    // and init the gcs instance
-    if (!valid_channel(chan)) {
-        return false;
-    }
+  // get associated mavlink channel (chan is a protected member of GCS_MAVLINK)
+  if (!serial_manager.get_mavlink_channel(protocol, instance, chan)) {
+    printf("GCS_MAVLINK::init() : Failed to get associated mavlink channel\n");
+    // return immediately in unlikely case mavlink channel cannot be found
+    return false;
+  }
+  //printf("GCS_MAVLINK::init() : For Channel %u\n", (uint8_t)chan);
 
-    /*
-      Now try to cope with SiK radios that may be stuck in bootloader
-      mode because CTS was held while powering on. This tells the
-      bootloader to wait for a firmware. It affects any SiK radio with
-      CTS connected that is externally powered. To cope we send 0x30
-      0x20 at 115200 on startup, which tells the bootloader to reset
-      and boot normally
-     */
-    _port->begin(115200);
-    AP_HAL::UARTDriver::flow_control old_flow_control = _port->get_flow_control();
-    _port->set_flow_control(AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE);
-    for (uint8_t i=0; i<3; i++) {
-        hal.scheduler->delay(1);
-        _port->write(0x30);
-        _port->write(0x20);
-    }
-    // since tcdrain() and TCSADRAIN may not be implemented...
+  // and init the gcs instance
+  if (!valid_channel(chan)) {
+    printf("GCS_MAVLINK::init() : GCS instance initialization failed\n");
+    return false;
+  }
+
+  // Now try to cope with SiK radios that may be stuck in bootloader mode
+  // because CTS was held while powering on. This tells the bootloader to
+  // wait for a firmware. It affects any SiK radio with CTS connected that
+  // is externally powered. To cope we send 0x30 0x20 at 115200 on startup,
+  // which tells the bootloader to reset and boot normally
+  _port->begin(115200);
+  AP_HAL::UARTDriver::flow_control old_flow_control = _port->get_flow_control();
+  _port->set_flow_control(AP_HAL::UARTDriver::FLOW_CONTROL_DISABLE);
+  for (uint8_t i=0; i<3; i++) {
     hal.scheduler->delay(1);
+    _port->write(0x30);
+    _port->write(0x20);
+  }
+  // since tcdrain() and TCSADRAIN may not be implemented...
+  hal.scheduler->delay(1);
     
-    _port->set_flow_control(old_flow_control);
+  _port->set_flow_control(old_flow_control);
 
-    // now change back to desired baudrate
-    _port->begin(serial_manager.find_baudrate(protocol, instance));
+  // now change back to desired baudrate
+  _port->begin(serial_manager.find_baudrate(protocol, instance));
 
-    mavlink_comm_port[chan] = _port;
+  mavlink_comm_port[chan] = _port;
 
-    // create performance counters
-    snprintf(_perf_packet_name, sizeof(_perf_packet_name), "GCS_Packet_%u", chan);
-    _perf_packet = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, _perf_packet_name);
+  // create performance counters
+  snprintf(_perf_packet_name, sizeof(_perf_packet_name), "GCS_Packet_%u", chan);
+  _perf_packet = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, _perf_packet_name);
 
-    snprintf(_perf_update_name, sizeof(_perf_update_name), "GCS_Update_%u", chan);
-    _perf_update = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, _perf_update_name);
+  snprintf(_perf_update_name, sizeof(_perf_update_name), "GCS_Update_%u", chan);
+  _perf_update = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, _perf_update_name);
 
-    AP_SerialManager::SerialProtocol mavlink_protocol = serial_manager.get_mavlink_protocol(chan);
-    mavlink_status_t *status = mavlink_get_channel_status(chan);
-    if (status == nullptr) {
-        return false;
-    }
-    
-    if (mavlink_protocol == AP_SerialManager::SerialProtocol_MAVLink2) {
-        // load signing key
-        load_signing_key();
+  AP_SerialManager::SerialProtocol mavlink_protocol = serial_manager.get_mavlink_protocol(chan);
+  mavlink_status_t *status = mavlink_get_channel_status(chan);
+  if (status == nullptr) {
+    printf("GCS_MAVLINK::init() : Unable to get Channel Status\n");  
+    return false;
+  }
+  
+  printf("GCS_MAVLINK::init() : Channel #%u Protocol = MAVLink", (uint8_t)chan);
 
-        if (status->signing == nullptr) {
-            // if signing is off start by sending MAVLink1.
-            status->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
-        }
-    } else if (status) {
-        // user has asked to only send MAVLink1
-        status->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
-    }
+  if (mavlink_protocol == AP_SerialManager::SerialProtocol_MAVLink2) {
+    printf("2\n");
+    // Enable MAVLink2 without signing
+    // load signing key
+    // load_signing_key();
+    //if (status->signing == nullptr) {
+    // if signing is off start by sending MAVLink1
+    //  status->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+    // }
+    status->flags &= ~(MAVLINK_STATUS_FLAG_OUT_MAVLINK1);
+  }
+  else {
+    // user has asked to only send MAVLink1
+    printf("1\n");
+    status->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+  }
 
-    if (chan == MAVLINK_COMM_0) {
-        // Always start with MAVLink1 on first port for now, to allow for recovery
-        // after experiments with MAVLink2
-        status->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
-    }
+  // Always start with MAVLink2 on first port
+  //if (chan == MAVLINK_COMM_0) {
+  //  printf("GCS_MAVLINK::init() : MAVLINK_COMM_0 Forced to MAVLink2\n");
+  // Always start with MAVLink2 on first port
+  //  status->flags &= ~(MAVLINK_STATUS_FLAG_OUT_MAVLINK1);
+  //}
 
-    return true;
+  //printf("GCS_MAVLINK::init() : status->flags = %u\n", status->flags);
+  return true;
 }
 
+/******************************************************************************
+ *
+ * void GCS_MAVLINK::send_meminfo(void)
+ *
+ ******************************************************************************/
 void GCS_MAVLINK::send_meminfo(void)
 {
     unsigned __brkval = 0;
